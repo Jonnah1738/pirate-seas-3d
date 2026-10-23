@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#120e0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Pirate Seas 3D — sail a gritty pirate sloop, trade broadsides and plunder merchants. Plays in the browser and on phones.">
+<title>Pirate Seas 3D</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="stats" class="iron">
+    <div class="row"><span class="ico">⛵</span><div class="bar"><i id="hpBar"></i></div><b id="hpTxt">160</b></div>
+    <div class="row small"><span>💰 <b id="gold">0</b></span><span>📦 <b id="cargo">0/30</b></span><span>☠ <b id="kills">0</b></span></div>
+  </div>
+  <div id="topR">
+    <canvas id="map" width="220" height="220"></canvas>
+    <div class="btnCol">
+      <button id="camBtn" class="ibtn" aria-label="Switch camera (V)"><span id="camIco">3rd</span></button>
+      <button id="setBtn" class="ibtn" aria-label="Settings">⚙</button>
+    </div>
+  </div>
+  <div id="hint" class="hidden"></div>
+  <div id="zone" class="hidden"></div>
+  <div id="toasts"></div>
+  <div id="labels"></div>
+  <div id="speedo" class="iron"><b id="spd">0.0</b> kn</div>
+
+  <div id="stick" aria-label="Steering"><div id="stickRing"></div><div id="knob"></div><span class="lbl">HELM</span></div>
+  <div id="fireRow">
+    <button id="fireP" class="fire" aria-label="Fire port broadside (Q)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" class="rbg"/><circle cx="18" cy="18" r="16" class="rfg" id="ringP"/></svg><span>◀<br>PORT</span></button>
+    <button id="fireS" class="fire" aria-label="Fire starboard broadside (E)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" class="rbg"/><circle cx="18" cy="18" r="16" class="rfg" id="ringS"/></svg><span>▶<br>STBD</span></button>
+  </div>
+  <div id="lever" class="iron">
+    <button id="thFull" class="lb">FULL</button>
+    <div id="track"><div id="fillT"></div><div id="handle"><i></i></div></div>
+    <b id="thPct">0%</b>
+    <button id="thStop" class="lb">STOP</button>
+  </div>
+  <button id="dockBtn" class="hidden">⚓ Dock</button>
+</div>
+
+<div id="title" class="overlay">
+  <div class="tpanel">
+    <div class="tsub">⚓ the gritty age of sail ⚓</div>
+    <h1>Pirate Seas <span>3D</span></h1>
+    <p class="tag">Broadsides, plunder &amp; the open sea</p>
+    <button id="playBtn" class="big">Set Sail</button>
+    <button id="newBtn" class="mid hidden">New Captain</button>
+    <button id="tSetBtn" class="mid">Settings</button>
+    <p class="keys" id="tKeys"></p>
+  </div>
+</div>
+
+<div id="port" class="overlay hidden">
+  <div class="parch">
+    <h2>Port Royal Harbour</h2>
+    <div class="psec"><h3>Shipwright</h3><div class="hrow"><div class="bar dark"><i id="pHp"></i></div><span id="pHpT"></span></div><button id="repBtn" class="pbtn"></button></div>
+    <div class="psec"><h3>Market <small>— your hold</small></h3><div id="mkt"></div><button id="sellAll" class="pbtn"></button></div>
+    <div class="pfoot"><span>💰 <b id="pGold">0</b> gold</span><button id="castOff" class="pbtn go">Cast off ⛵</button></div>
+  </div>
+</div>
+
+<div id="settings" class="overlay hidden">
+  <div class="parch">
+    <h2>Settings</h2>
+    <div class="srow"><span>Graphics</span><div class="seg" id="gfxSeg"><button data-v="high">High</button><button data-v="low">Low</button><button data-v="auto">Auto</button></div></div>
+    <div class="snote" id="gfxNote"></div>
+    <div class="srow"><span>Camera</span><div class="seg" id="camSeg"><button data-v="third">3rd person</button><button data-v="first">1st person</button></div></div>
+    <div class="srow"><span>Sound</span><div class="seg" id="sndSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+    <div class="srow"><span>Look speed</span><input type="range" id="sens" min="0.4" max="2" step="0.1"></div>
+    <div class="help" id="helpTxt"></div>
+    <button id="setClose" class="pbtn go">Resume</button>
+  </div>
+</div>
+
+<div id="sunk" class="overlay hidden">
+  <div class="parch">
+    <h2>Gone to Davy Jones</h2>
+    <p>Your sloop slipped beneath the waves. The crew dragged you ashore at Port Royal — the cargo is lost, and the shipwright took his cut for a new hull.</p>
+    <button id="reBtn" class="pbtn go">Take the new sloop</button>
+  </div>
+</div>
+
+<div id="boot">Loading the seas…</div>
+<noscript>Pirate Seas 3D needs JavaScript and WebGL.</noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
