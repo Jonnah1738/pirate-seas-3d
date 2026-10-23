@@ -1,11 +1,12 @@
 // Pirate Seas 3D — first playable slice.
 import * as THREE from 'three';
 import { makeOcean, makeSky, waveHeight, OCEAN_U, MAXS } from './ocean.js';
-import { buildShip, animateShip, TYPES } from './shipbuilder.js';
+import { buildShip, animateShip, TYPES, SAIL_U } from './shipbuilder.js';
+import { Post } from './post.js';
 import { makeFX, Wake } from './fx.js';
 import { buildIsland, islandH, ISLAND, PIER, DOCK } from './island.js';
 import { audioInit, sfx, setSound, soundOn } from './audio.js';
-import { planks } from './textures.js';
+import { planks, waterTex } from './textures.js';
 
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -15,7 +16,7 @@ const R = Math.random;
 // ---------- persistence (own keys: never touches the 2D game's pirateSeas_* keys) ----------
 const SKEY = 'ps3d_save_v1', OKEY = 'ps3d_settings_v1';
 const ld = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
-const settings = Object.assign({ gfx: 'auto', cam: 'third', sound: true, sens: 1 }, ld(OKEY) || {});
+const settings = Object.assign({ gfx: 'auto', cam: 'third', sound: true, sens: 1, fps: false }, ld(OKEY) || {});
 const saveSettings = () => { try { localStorage.setItem(OKEY, JSON.stringify(settings)); } catch (e) { } };
 const fresh = () => ({ v: 1, gold: 150, cargo: {}, hp: 160, kills: 0, hints: {}, play: 0 });
 let save = ld(SKEY);
@@ -24,22 +25,36 @@ const writeSave = () => { save.hp = Math.round(player ? player.hp : save.hp); tr
 // ---------- renderer / scene ----------
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 const canvas = $('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch, powerPreference: 'high-performance' });
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !/[?&]aa=0/.test(location.search), // ?aa=0: debug switch to compare MSAA cost
+  powerPreference: 'high-performance', stencil: false });
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.enabled = false;
 const scene = new THREE.Scene();
-const FOGC = new THREE.Color(0x7d7a70);
-scene.fog = new THREE.FogExp2(FOGC, 0.0011);
-const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 6000);
+const FOGC = OCEAN_U.uFogCol.value;
+scene.fog = new THREE.FogExp2(FOGC, OCEAN_U.uFogD.value);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 3000); // fog is opaque by ~2.2 km: shorter far plane = better depth precision
 const sunDir = OCEAN_U.uSunDir.value;
-const hemi = new THREE.HemisphereLight(0x9aa0a4, 0x2a2118, 1.15); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffc79a, 2.3); sun.position.copy(sunDir).multiplyScalar(100); scene.add(sun);
+OCEAN_U.uNorm.value = waterTex();
+const hemi = new THREE.HemisphereLight(0x8d9aa6, 0x2a2118, 0.85); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffc08a, 3.0); sun.position.copy(sunDir).multiplyScalar(150); scene.add(sun); scene.add(sun.target);
+// soft shadows (High only): a small frustum that follows the player
+sun.shadow.camera.left = -55; sun.shadow.camera.right = 55; sun.shadow.camera.top = 55; sun.shadow.camera.bottom = -55;
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 400; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04; sun.shadow.radius = 3;
+sun.shadow.mapSize.set(isTouch ? 1024 : 2048, isTouch ? 1024 : 2048);
 const lantern = new THREE.PointLight(0xffa040, 18, 30, 1.7); scene.add(lantern);
 const sky = makeSky(scene);
+// image-based lighting: prefilter the procedural sky once into an environment map (reflections on wet wood, iron, brass)
+(() => {
+  const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene(), sm = new THREE.Mesh(sky.geometry, sky.material); es.add(sm);
+  scene.environment = pm.fromScene(es, 0.02, 1, 2000).texture; pm.dispose();
+})();
 let LOW = false;
 let ocean = makeOcean(false); scene.add(ocean);
 const island = buildIsland(scene, false);
 let fx = makeFX(scene, false);
+fx.setFog(FOGC, OCEAN_U.uFogD.value);
+let post = null;
 
 // ---------- ships ----------
 const STATS = {
@@ -49,20 +64,22 @@ const STATS = {
 };
 const NAMES = { merchant: ['Santa Lucia', 'Good Hope', 'Mary Rose', 'Fair Wind', 'San Felipe', 'Golden Hind'], hunter: ['HMS Relentless', 'HMS Vigilant', 'HMS Gallows', 'HMS Retribution'] };
 const ships = []; let player = null; let seedN = 1;
+const _w1 = [0, 0], _w2 = [0, 0], _w3 = [0, 0], _w4 = [0, 0], _w5 = [0, 0];
 class Ship {
   constructor(kind, x, z, h) {
     this.kind = kind; this.st = STATS[kind]; this.S = buildShip(kind, seedN++); scene.add(this.S.group);
     this.x = x; this.z = z; this.h = h; this.y = 0; this.pitch = 0; this.roll = 0; this.speed = 0; this.throttle = 0; this.rudder = 0;
     this.hp = this.maxHp = this.st.hp; this.reload = { port: 0, star: 0 }; this.sinking = 0; this.dead = false; this.smokeT = 0;
-    this.wake = new Wake(scene, LOW ? 40 : 70); this.vel = new THREE.Vector3(); this.queue = [];
+    this.wake = new Wake(scene, 56); this.vel = new THREE.Vector3(); this.queue = [];
     this.name = kind === 'sloop' ? 'Your sloop' : NAMES[kind][(R() * NAMES[kind].length) | 0];
     this.ai = kind !== 'sloop' ? { wp: null, aggro: 0, t: R() * 5 } : null;
     ships.push(this);
   }
   get L() { return this.S.dims.L; }
-  fwd() { return [-Math.sin(this.h), -Math.cos(this.h)]; }
-  toWorld(lx, lz) { const c = Math.cos(this.h), s = Math.sin(this.h); return [this.x + lx * c + lz * s, this.z - lx * s + lz * c]; }
-  toLocal(wx, wz) { const dx = wx - this.x, dz = wz - this.z, c = Math.cos(this.h), s = Math.sin(this.h); return [dx * c - dz * s, dx * s + dz * c]; }
+  // small reused 2-arrays instead of a fresh array per call (these run many times per frame)
+  fwd() { const o = this._f || (this._f = [0, 0]); o[0] = -Math.sin(this.h); o[1] = -Math.cos(this.h); return o; }
+  toWorld(lx, lz, o = [0, 0]) { const c = Math.cos(this.h), s = Math.sin(this.h); o[0] = this.x + lx * c + lz * s; o[1] = this.z - lx * s + lz * c; return o; }
+  toLocal(wx, wz, o = [0, 0]) { const dx = wx - this.x, dz = wz - this.z, c = Math.cos(this.h), s = Math.sin(this.h); o[0] = dx * c - dz * s; o[1] = dx * s + dz * c; return o; }
   update(dt, t) {
     const d = this.S.dims;
     if (this.sinking) {
@@ -82,7 +99,7 @@ class Ship {
     const [fx_, fz] = this.fwd(); const ox = this.x, oz = this.z;
     this.x += fx_ * this.speed * dt; this.z += fz * this.speed * dt;
     // grounding on the island / pier
-    const [bx, bz] = this.toWorld(0, -d.L * 0.45);
+    const [bx, bz] = this.toWorld(0, -d.L * 0.45, _w1);
     if (islandH(bx, bz) > -d.D * 0.8 || islandH(this.x, this.z) > -d.D * 0.8) {
       this.x = ox; this.z = oz; const a = Math.atan2(this.z - ISLAND.z, this.x - ISLAND.x); this.x += Math.cos(a) * 0.6; this.z += Math.sin(a) * 0.6;
       if (this.speed > 5 && this === player) { damage(this, (this.speed - 4) * 2.5, null); toast('Ran aground!'); sfx.hit(0); }
@@ -96,7 +113,7 @@ class Ship {
     const er = Math.hypot(this.x, this.z); if (er > 2900) { this.x *= 2900 / er; this.z *= 2900 / er; if (this === player && R() < 0.02) toast('Thick fog — the charts end here'); }
     this.vel.set(fx_ * this.speed, 0, fz * this.speed);
     // buoyancy: four hull points
-    const pB = this.toWorld(0, -d.L * 0.4), pS = this.toWorld(0, d.L * 0.4), pP = this.toWorld(-d.B * 0.45, 0), pR = this.toWorld(d.B * 0.45, 0);
+    const pB = this.toWorld(0, -d.L * 0.4, _w1), pS = this.toWorld(0, d.L * 0.4, _w2), pP = this.toWorld(-d.B * 0.45, 0, _w3), pR = this.toWorld(d.B * 0.45, 0, _w4);
     const hB = waveHeight(pB[0], pB[1], t), hS = waveHeight(pS[0], pS[1], t), hP = waveHeight(pP[0], pP[1], t), hR = waveHeight(pR[0], pR[1], t);
     const ty = (hB + hS + hP + hR) / 4 - (this.kind === 'sloop' ? 0.05 : 0.1);
     const k = Math.min(1, dt * 4);
@@ -110,12 +127,16 @@ class Ship {
     if (this.hp < this.maxHp * 0.5) { this.smokeT -= dt; if (this.smokeT <= 0) { this.smokeT = LOW ? 0.3 : 0.14; fx.burn(this.x, this.y + d.deckY + 0.5, this.z, this.hp < this.maxHp * 0.25); } }
   }
   place() { const g = this.S.group; g.position.set(this.x, this.y, this.z); g.rotation.set(this.pitch, this.h, this.roll, 'YXZ'); g.updateMatrixWorld(true); }
+  setShadow(on) { this.S.group.traverse(o => { if (o.isMesh && o !== this.S.flag && o !== this.S.lamp && o !== this.S.rig) o.castShadow = on; }); }
   remove() { this.dead = true; scene.remove(this.S.group); this.wake.dispose(scene); this.S.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); if (this.plate) this.plate.remove(); }
 }
 
-// ---------- cannonballs ----------
-const ballGeo = new THREE.SphereGeometry(0.17, 8, 6), ballMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.5, metalness: 0.6 });
+// ---------- cannonballs: one InstancedMesh for every ball in flight ----------
+const MAXB = 64;
+const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 10, 8), new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.45, metalness: 0.7 }), MAXB);
+ballMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); ballMesh.count = 0; ballMesh.frustumCulled = false; scene.add(ballMesh);
 const balls = [];
+const _bm = new THREE.Matrix4(), _bp = new THREE.Vector3(), _bd = new THREE.Vector3();
 function fire(s, side) {
   if (s.reload[side] > 0 || s.sinking) return false;
   s.reload[side] = s.st.reload;
@@ -130,7 +151,7 @@ function aimFor(s, side) { // aim assist: elevation for the nearest enemy in the
   const sx = side === 'star' ? 1 : -1; let best = null, bd = 1e9;
   for (const e of ships) {
     if (e === s || e.sinking || e.dead) continue;
-    const [lx, lz] = s.toLocal(e.x, e.z), dist = Math.hypot(lx, lz);
+    const [lx, lz] = s.toLocal(e.x, e.z, _w5), dist = Math.hypot(lx, lz);
     if (lx * sx <= 0 || dist > 460) continue; const off = Math.atan2(lz, Math.abs(lx)); if (Math.abs(off) > 0.62) continue;
     if (dist < bd) { bd = dist; best = e; }
   }
@@ -144,46 +165,46 @@ function solve(s, e, V, err) {
   return { el: el * (1 + err * (R() - 0.5)), yaw: Math.atan2(px - s.x, pz - s.z) + err * 0.08 * (R() - 0.5), target: e };
 }
 function shoot(s, q) {
-  const p = s.S.group.localToWorld(q.m.clone());
+  const p = s.S.group.localToWorld(_bp.copy(q.m));
   const c = Math.cos(s.h), sn = Math.sin(s.h);
   let dx = q.sx * c, dz = -q.sx * sn, el = 0.07;
   if (q.aim) { // turn toward the solution but never leave the broadside arc
     const want = q.aim.yaw, base = Math.atan2(dx, dz), dy = clamp(wrap(want - base), -0.45, 0.45);
     dx = Math.sin(base + dy); dz = Math.cos(base + dy); el = clamp(q.aim.el, -0.02, 0.38);
   }
-  el += s.roll * -q.sx * 0.5 * 0; // (cannons are leveled by the gun crews)
   const V = s.st.ball * (0.98 + R() * 0.04);
-  const v = new THREE.Vector3(dx * Math.cos(el) * V + s.vel.x, Math.sin(el) * V, dz * Math.cos(el) * V + s.vel.z);
-  let mesh = null; for (const b of balls) if (!b.on) { mesh = b.mesh; balls.splice(balls.indexOf(b), 1); break; }
-  if (!mesh) { mesh = new THREE.Mesh(ballGeo, ballMat); scene.add(mesh); }
-  mesh.visible = true; mesh.position.copy(p);
-  balls.push({ on: true, mesh, p: p.clone(), v, owner: s, dmg: s.st.dmg, t: 0 });
-  fx.muzzle(p, new THREE.Vector3(dx, 0, dz), s.vel);
+  let b = null; for (const o of balls) if (!o.on) { b = o; break; }
+  if (!b) { if (balls.length >= MAXB) return; b = { on: false, p: new THREE.Vector3(), v: new THREE.Vector3() }; balls.push(b); }
+  b.on = true; b.p.copy(p); b.v.set(dx * Math.cos(el) * V + s.vel.x, Math.sin(el) * V, dz * Math.cos(el) * V + s.vel.z); b.owner = s; b.dmg = s.st.dmg; b.t = 0; b.__c = 0;
+  fx.muzzle(p, _bd.set(dx, 0, dz), s.vel);
   sfx.cannon(p.distanceTo(camera.position));
 }
 function updateBalls(dt, t) {
+  let n = 0;
   for (const b of balls) {
     if (!b.on) continue;
-    b.t += dt; b.v.y -= 9.81 * dt; b.p.addScaledVector(b.v, dt); b.mesh.position.copy(b.p);
+    b.t += dt; b.v.y -= 9.81 * dt; b.p.addScaledVector(b.v, dt);
     if (!LOW && b.owner === player && (b.t * 60 | 0) % 3 === 0) fx.smoke.emit(b.p.x, b.p.y, b.p.z, 0, 0.3, 0, { life: 0.7, s0: 0.5, s1: 1.4, col: [0.8, 0.8, 0.78], a: 0.25 });
     let hit = null;
     for (const s of ships) {
       if (s === b.owner || s.dead || s.sinking > 2) continue;
       const dx = b.p.x - s.x, dz = b.p.z - s.z; if (dx * dx + dz * dz > (s.L * 0.6) ** 2) continue;
-      const [lx, lz] = s.toLocal(b.p.x, b.p.z), d = s.S.dims, tt = (lz + d.L / 2) / d.L;
+      const [lx, lz] = s.toLocal(b.p.x, b.p.z, _w5), d = s.S.dims, tt = (lz + d.L / 2) / d.L;
       if (tt < 0 || tt > 1) continue; const hb = s.S.halfB(tt), ly = b.p.y - s.y;
       if (Math.abs(lx) < hb * 1.05 && ly > -1.5 && ly < s.S.sheer(tt) + 0.6) { hit = s; break; }
     }
     if (hit) {
-      b.on = false; b.mesh.visible = false;
-      const n = new THREE.Vector3(b.p.x - hit.x, 0, b.p.z - hit.z).normalize();
-      fx.hit(b.p.x, b.p.y, b.p.z, n.x, n.z); sfx.hit(b.p.distanceTo(camera.position));
+      b.on = false;
+      let nx = b.p.x - hit.x, nz = b.p.z - hit.z; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+      fx.hit(b.p.x, b.p.y, b.p.z, nx, nz); sfx.hit(b.p.distanceTo(camera.position));
       damage(hit, b.dmg * (0.8 + R() * 0.45), b.owner);
       continue;
     }
     const wh = waveHeight(b.p.x, b.p.z, t);
-    if (b.p.y < wh || b.t > 7) { b.on = false; b.mesh.visible = false; if (b.p.y < wh + 1) { fx.splash(b.p.x, wh, b.p.z, 1); sfx.splash(b.p.distanceTo(camera.position)); } }
+    if (b.p.y < wh || b.t > 7) { b.on = false; if (b.p.y < wh + 1) { fx.splash(b.p.x, wh, b.p.z, 1); sfx.splash(b.p.distanceTo(camera.position)); } continue; }
+    ballMesh.setMatrixAt(n++, _bm.makeTranslation(b.p.x, b.p.y, b.p.z));
   }
+  ballMesh.count = n; if (n) ballMesh.instanceMatrix.needsUpdate = true;
 }
 function damage(s, d, by) {
   if (s.sinking || s.dead) return;
@@ -331,26 +352,53 @@ function updateCamera(dt, t) {
 }
 
 // ---------- graphics quality ----------
-let fpsNow = 60, fpsLowRun = 0, fpsAcc = 0, fpsN = 0;
+// Two looks share one art direction: High = soft shadows + HDR post (bloom, god rays, grade, vignette, grain), 3-tap water;
+// Low = same materials/sky/IBL, renderer tone mapping, CSS vignette, 1-tap water, smaller ocean grid, fewer particles.
+// On top of either, dynamic resolution scales the drawing buffer between DYN_MIN and 1 from the measured frame time.
+// Auto: phones/tablets start on Low and only step up to High after frames stay fast; any device drops to Low if fps stays low.
+let fpsNow = 60, fpsLowRun = 0, fpsFastRun = 0, upLocked = false;
+let dyn = 1, dynLock = false; const DYN_MIN = 0.6; let dynT = 0, ftAvg = 16.7, ftN = 0, ftSum = 0;
+const PR_CAP = { touchLow: 1.25, touchHigh: 1.6, deskLow: 1, deskHigh: 1.5 };
+function basePR() { const dpr = devicePixelRatio || 1; return Math.min(dpr, isTouch ? (LOW ? PR_CAP.touchLow : PR_CAP.touchHigh) : (LOW ? PR_CAP.deskLow : PR_CAP.deskHigh)); }
+function gfxNoteText() { return `Now: ${LOW ? 'Low' : 'High'} · ${fpsNow | 0} fps · ${Math.round(dyn * 100)}% res` + (settings.gfx === 'auto' ? (isTouch ? ' · Auto starts Low on phones, steps up when smooth' : ' · Auto drops to Low if fps stays low') : ''); }
 function applyGfx() {
   const want = settings.gfx === 'low' ? true : settings.gfx === 'high' ? false : LOW;
   setLow(want, true);
   document.querySelectorAll('#gfxSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === settings.gfx));
-  $('gfxNote').textContent = `Now: ${LOW ? 'Low' : 'High'} · ${fpsNow | 0} fps` + (settings.gfx === 'auto' ? ' · Auto drops to Low if fps stays low' : '');
+  document.querySelectorAll('#fpsSeg button').forEach(b => b.classList.toggle('on', (b.dataset.v === '1') === !!settings.fps));
+  $('gfxNote').textContent = gfxNoteText();
 }
 function setLow(l, force) {
   if (l === LOW && !force) return;
   const changed = l !== LOW; LOW = l;
-  if (changed) { scene.remove(ocean); ocean.geometry.dispose(); ocean = makeOcean(LOW); scene.add(ocean); }
+  if (changed) { scene.remove(ocean); ocean.geometry.dispose(); ocean.material.dispose(); ocean = makeOcean(LOW); scene.add(ocean); }
   island.lights.forEach(li => li.intensity = LOW ? 0 : 60);
   OCEAN_U.uDetail.value = LOW ? 0 : 1;
+  fx.setLow(LOW);
+  // shadows only on High; toggling needs a material refresh, so only do it on a real change
+  if (renderer.shadowMap.enabled !== !LOW) {
+    renderer.shadowMap.enabled = !LOW; sun.castShadow = !LOW;
+    scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
+  }
+  if (!LOW && !post) { try { post = new Post(renderer); } catch (e) { post = null; } }
+  document.body.classList.toggle('gfxLow', LOW);
   resize();
 }
 function resize() {
-  const w = innerWidth, h = innerHeight, dpr = devicePixelRatio || 1;
-  const pr = LOW ? Math.min(dpr, 1) * (isTouch ? 1 : 0.9) : Math.min(dpr, isTouch ? 1.75 : 1.5);
+  const w = innerWidth, h = innerHeight, pr = basePR() * dyn;
   renderer.setPixelRatio(pr); renderer.setSize(w, h, false); canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   camera.aspect = w / h; camera.updateProjectionMatrix(); fx.setScale(h * pr);
+}
+// called once per rendered frame with the real frame interval (ms)
+function perfTick(ms) {
+  ftSum += Math.min(ms, 100); ftN++; dynT += ms;
+  if (dynT < 700 || dynLock) return;
+  ftAvg = ftSum / ftN; ftSum = 0; ftN = 0; dynT = 0;
+  if (state !== 'play' && state !== 'port' && state !== 'title') return;
+  let nd = dyn;
+  if (ftAvg > 21) nd = Math.max(DYN_MIN, dyn - (ftAvg > 30 ? 0.15 : 0.08));     // < ~48 fps: shed pixels
+  else if (ftAvg < 17.6 && dyn < 1) nd = Math.min(1, dyn + 0.05);                 // steady 57+: claw them back slowly
+  if (Math.abs(nd - dyn) > 0.001) { dyn = nd; resize(); }
 }
 addEventListener('resize', resize);
 // save when the tab is hidden or closed (phones kill background tabs)
@@ -383,20 +431,24 @@ function hintTick(dt) {
   if (!save.hints.port && (cargoN() > 0 || player.hp < player.maxHp * 0.6) && Math.hypot(player.x - DOCK.x, player.z - DOCK.z) < 400) showHint('port');
 }
 let steerT = 0;
+// change-only DOM writes: style/text/class are touched only when the value actually changes
+const _hc = new Map();
+function hset(id, k, v) { const key = id + k; if (_hc.get(key) === v) return; _hc.set(key, v); const e = $(id); if (k === 'text') e.textContent = v; else if (k[0] === '.') e.classList.toggle(k.slice(1), v); else e.style[k] = v; }
+let aimP = false, aimS = false;
 function updateHUD() {
   const p = player, f = p.hp / p.maxHp;
-  $('hpBar').style.width = (f * 100) + '%'; $('hpBar').classList.toggle('low', f < 0.35); $('hpTxt').textContent = Math.ceil(p.hp);
-  $('gold').textContent = save.gold; $('cargo').textContent = cargoN() + '/' + CAP; $('kills').textContent = save.kills;
-  $('spd').textContent = (p.speed * 1.944).toFixed(1);
-  const pct = Math.round(p.throttle * 100); $('thPct').textContent = pct + '%';
-  $('handle').style.bottom = (p.throttle * 100) + '%'; $('fillT').style.height = `calc(${p.throttle * 100}% - 4px)`;
-  for (const [side, id, ring] of [['port', 'fireP', 'ringP'], ['star', 'fireS', 'ringS']]) {
-    const r = p.reload[side] / p.st.reload; $(ring).style.strokeDashoffset = (r * 100.5).toFixed(1); $(id).classList.toggle('reload', r > 0);
-    $(id).classList.toggle('aim', r <= 0 && !!aimFor(p, side));
-  }
+  hset('hpBar', 'width', (f * 100).toFixed(1) + '%'); hset('hpBar', '.low', f < 0.35); hset('hpTxt', 'text', '' + Math.ceil(p.hp));
+  hset('gold', 'text', '' + save.gold); hset('cargo', 'text', cargoN() + '/' + CAP); hset('kills', 'text', '' + save.kills);
+  hset('spd', 'text', (p.speed * 1.944).toFixed(1));
+  const pct = Math.round(p.throttle * 100); hset('thPct', 'text', pct + '%');
+  hset('handle', 'bottom', (p.throttle * 100).toFixed(1) + '%'); hset('fillT', 'height', `calc(${(p.throttle * 100).toFixed(1)}% - 4px)`);
+  if (frame % 6 === 0) { aimP = !!aimFor(p, 'port'); aimS = !!aimFor(p, 'star'); } // firing solutions at 10 Hz
+  const rp = p.reload.port / p.st.reload, rs = p.reload.star / p.st.reload;
+  hset('ringP', 'strokeDashoffset', (rp * 100.5).toFixed(1)); hset('fireP', '.reload', rp > 0); hset('fireP', '.aim', rp <= 0 && aimP);
+  hset('ringS', 'strokeDashoffset', (rs * 100.5).toFixed(1)); hset('fireS', '.reload', rs > 0); hset('fireS', '.aim', rs <= 0 && aimS);
   const nearDock = Math.hypot(p.x - DOCK.x, p.z - DOCK.z) < 55 && p.speed < 5 && !p.sinking;
-  $('dockBtn').classList.toggle('hidden', !nearDock || state !== 'play'); canDock = nearDock;
-  const z = inHarbour(p.x, p.z); $('zone').classList.toggle('hidden', !z); $('zone').textContent = '⚓ Harbour waters — safe';
+  hset('dockBtn', '.hidden', !nearDock || state !== 'play'); canDock = nearDock;
+  const z = inHarbour(p.x, p.z); hset('zone', '.hidden', !z); hset('zone', 'text', '⚓ Harbour waters — safe');
 }
 let canDock = false;
 // nameplates
@@ -407,11 +459,13 @@ function updatePlates() {
   for (const s of ships) {
     if (!s.plate) continue; const d = Math.hypot(s.x - camera.position.x, s.z - camera.position.z);
     _p.set(s.x, s.y + s.S.dims.F + 22, s.z).project(camera);
-    const vis = d < 700 && _p.z < 1 && !s.sinking && state === 'play';
-    s.plate.style.display = vis ? '' : 'none'; if (!vis) continue;
-    s.plate.style.left = ((_p.x + 1) / 2 * W).toFixed(0) + 'px'; s.plate.style.top = ((1 - _p.y) / 2 * H).toFixed(0) + 'px';
-    s.plate.style.opacity = d > 500 ? (700 - d) / 200 : 1;
-    s.plate.lastChild.firstChild.style.width = (s.hp / s.maxHp * 100) + '%';
+    const vis = d < 700 && _p.z < 1 && !s.sinking && state === 'play', st = s.plate.style;
+    if (s._pv !== vis) { s._pv = vis; st.display = vis ? '' : 'none'; }
+    if (!vis) continue;
+    // one composited transform instead of left/top (no layout)
+    st.transform = `translate3d(${((_p.x + 1) / 2 * W) | 0}px,${((1 - _p.y) / 2 * H) | 0}px,0) translate(-50%,-100%)`;
+    const o = d > 500 ? ((700 - d) / 200).toFixed(2) : '1'; if (s._po !== o) { s._po = o; st.opacity = o; }
+    const hw = (s.hp / s.maxHp * 100).toFixed(0) + '%'; if (s._ph !== hw) { s._ph = hw; s.plate.lastChild.firstChild.style.width = hw; }
   }
 }
 // minimap
@@ -556,7 +610,8 @@ function refreshSettings() {
 $('setBtn').onclick = () => toggleSettings(true);
 $('tSetBtn').onclick = () => toggleSettings(true);
 $('setClose').onclick = () => toggleSettings(false);
-$('gfxSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; settings.gfx = v; saveSettings(); if (v === 'auto') { fpsLowRun = 0; setLow(false); } applyGfx(); };
+$('gfxSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; settings.gfx = v; saveSettings(); if (v === 'auto') { fpsLowRun = 0; fpsFastRun = 0; upLocked = false; setLow(isTouch); } applyGfx(); };
+$('fpsSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; settings.fps = v === '1'; saveSettings(); $('fpsBox').classList.toggle('hidden', !settings.fps); applyGfx(); };
 $('camSeg').onclick = e => { const v = e.target.dataset.v; if (v) { setCam(v); refreshSettings(); } };
 $('sndSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; settings.sound = v === '1'; setSound(settings.sound); saveSettings(); refreshSettings(); };
 $('sens').oninput = e => { settings.sens = +e.target.value; saveSettings(); };
@@ -605,8 +660,9 @@ function initTitle() {
 }
 
 // ---------- main loop ----------
-let last = performance.now(), simT = 0, frame = 0, saveT = 0, creakT = 4;
+let last = performance.now(), simT = 0, frame = 0, saveT = 0, creakT = 4, aiAcc = 0;
 const clock = { fpsT: 0, n: 0 };
+const _lp = new THREE.Vector3();
 function step(dt) {
   simT += dt; const t = simT;
   OCEAN_U.uTime.value = t;
@@ -618,7 +674,9 @@ function step(dt) {
       save.play += dt;
     } else if (state !== 'sunk') { player.rudder = 0; }
     if (state === 'port') { player.x = DOCK.x; player.z = DOCK.z; player.h = DOCK.heading; player.speed = 0; player.throttle = 0; }
-    for (const s of ships) if (s.ai && !s.sinking && !s.dead && state !== 'title') ai(s, dt);
+    // AI decisions at ~10 Hz (steering/firing do not need 60 Hz); physics still integrates every frame
+    aiAcc += dt;
+    if (aiAcc >= 0.1) { for (const s of ships) if (s.ai && !s.sinking && !s.dead && state !== 'title') ai(s, aiAcc); aiAcc = 0; }
     for (const s of ships) if (!s.dead) s.update(dt, t);
     for (let i = ships.length - 1; i >= 0; i--) if (ships[i].dead && ships[i] !== player) ships.splice(i, 1);
     // ship-ship separation
@@ -629,17 +687,21 @@ function step(dt) {
     updateBalls(dt, t); updateLoot(dt, t);
     for (const r of respawnT) r.t -= dt;
     for (let i = respawnT.length - 1; i >= 0; i--) if (respawnT[i].t <= 0) { const k = respawnT.splice(i, 1)[0].kind; if (state !== 'title') spawnEnemy(k, true); }
-    const hunters = ships.filter(s => s.kind === 'hunter' && !s.sinking).length + respawnT.filter(r => r.kind === 'hunter').length;
-    if (save && save.kills >= 3 && hunters < 2 && state === 'play') spawnEnemy('hunter', true);
+    if (save && save.kills >= 3 && state === 'play') {
+      let hunters = 0; for (const s of ships) if (s.kind === 'hunter' && !s.sinking) hunters++; for (const r of respawnT) if (r.kind === 'hunter') hunters++;
+      if (hunters < 2) spawnEnemy('hunter', true);
+    }
   }
   // visuals
+  const cx = camera.position.x, cz = camera.position.z;
   for (const s of ships) {
     if (s.dead) continue;
-    const d = Math.hypot(s.x - camera.position.x, s.z - camera.position.z), near = d < (LOW ? 220 : 420);
+    const d = Math.hypot(s.x - cx, s.z - cz), near = d < (LOW ? 220 : 420);
     animateShip(s.S, t, s.sinking ? 0.1 : Math.max(0.15, s.throttle), s.rudder >= 0 ? 1 : -1, near && (!LOW || frame % 2 === 0));
-    s.S.wheel.rotation.z = -s.rudder * 2.4; s.S.rig.visible = d < (LOW ? 300 : 900);
-    if (d < (LOW ? 500 : 1100)) { const [fx_, fz] = s.fwd(), [wx, wz] = s.toWorld(0, s.S.dims.L * 0.48); s.wake.update(wx, wz, fx_, fz, s.speed, s.S.dims.B * 0.32, t, t); }
-    if (s.speed > 3 && !s.sinking && d < 400) { const [bx, bz] = s.toWorld(0, -s.S.dims.L * 0.5); const [fx_, fz] = s.fwd(); fx.spray(bx, s.y + 0.3, bz, fx_ * s.speed * 0.6, fz * s.speed * 0.6, (s.speed / s.st.spd) * (LOW ? 0.4 : 0.9)); }
+    s.S.wheel.rotation.z = -s.rudder * 2.4; s.S.rig.visible = d < (LOW ? 320 : 900); s.S.flag.visible = d < (LOW ? 500 : 1200);
+    s.wake.mesh.visible = d < (LOW ? 500 : 1100);
+    if (s.wake.mesh.visible) { const f = s.fwd(), w = s.toWorld(0, s.S.dims.L * 0.48, _w1); s.wake.update(w[0], w[1], f[0], f[1], s.speed, s.S.dims.B * 0.32, t, t, LOW || d > 300 ? 3 : 1); }
+    if (s.speed > 3 && !s.sinking && d < 400) { const b = s.toWorld(0, -s.S.dims.L * 0.5, _w1), f = s.fwd(); fx.spray(b[0], s.y + 0.3, b[1], f[0] * s.speed * 0.6, f[1] * s.speed * 0.6, (s.speed / s.st.spd) * (LOW ? 0.4 : 0.9)); }
   }
   fx.update(dt, t);
   // hull cut-outs in the water + lantern glow
@@ -650,7 +712,7 @@ function step(dt) {
     a.set(s.x, s.z, s.h, s.y + s.S.dims.deckY + 0.2); b.set(s.S.dims.B * 0.47, s.S.dims.L * 0.47, 0, 0); k++;
   }
   for (; k < MAXS; k++) OCEAN_U.uShipB.value[k].set(0, 0, 0, 0);
-  if (player) { const lp = player.S.group.localToWorld(player.S.lanternPos.clone()); lantern.position.copy(lp); OCEAN_U.uLantern.value.set(lp.x, lp.y, lp.z, player.sinking ? 0 : 0.6); lantern.intensity = 16 + Math.sin(t * 9) * 1.5 + Math.sin(t * 23) * 1; }
+  if (player) { const lp = player.S.group.localToWorld(_lp.copy(player.S.lanternPos)); lantern.position.copy(lp); OCEAN_U.uLantern.value.set(lp.x, lp.y, lp.z, player.sinking ? 0 : 0.6); lantern.intensity = 16 + Math.sin(t * 9) * 1.5 + Math.sin(t * 23) * 1; }
   updateCamera(dt, t);
   sky.position.copy(camera.position);
   ocean.material.uniforms.uCenter.value.set(Math.round(camera.position.x / 4) * 4, Math.round(camera.position.z / 4) * 4);
@@ -660,19 +722,49 @@ function step(dt) {
     creakT -= dt; if (creakT < 0) { creakT = 5 + R() * 7; sfx.creak(); }
     sfx.speed(player.speed);
   }
-  if (hitFlash > 0) { hitFlash -= dt; canvas.style.filter = hitFlash > 0 ? `sepia(.6) saturate(${1 + hitFlash * 3}) hue-rotate(-20deg)` : ''; }
+  if (hitFlash > 0) { hitFlash -= dt; canvas.style.filter = hitFlash > 0 && (LOW || !post) ? `sepia(.6) saturate(${1 + hitFlash * 3}) hue-rotate(-20deg)` : ''; }
 }
+const _sunP = new THREE.Vector3(), _sunUv = new THREE.Vector2(), postOpt = { sunUv: _sunUv, sunAmt: 0, flash: 0, exposure: 1.12 };
+let frameCalls = 0, frameTris = 0;
+function render() {
+  // per-frame shared uniforms: shadow frustum follows the player, sun direction in view space for sail translucency
+  if (player) { sun.target.position.set(player.x, 0, player.z); sun.position.copy(sunDir).multiplyScalar(150).add(sun.target.position); }
+  SAIL_U.uSunV.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
+  renderer.info.autoReset = false; renderer.info.reset();
+  if (!LOW && post) {
+    _sunP.copy(sunDir).multiplyScalar(1000).add(camera.position).project(camera);
+    const on = _sunP.z < 1 ? Math.max(0, 1 - Math.max(Math.abs(_sunP.x), Math.abs(_sunP.y)) / 1.6) : 0;
+    _sunUv.set(_sunP.x * 0.5 + 0.5, _sunP.y * 0.5 + 0.5); postOpt.sunAmt = on * 0.55; postOpt.flash = Math.max(0, hitFlash) * 1.6;
+    post.render(scene, camera, postOpt);
+  } else renderer.render(scene, camera);
+  frameCalls = renderer.info.render.calls; frameTris = renderer.info.render.triangles;
+}
+let fpsEl = null, fpsT = 0;
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now; frame++;
+  const ms = now - last, dt = Math.min(0.05, ms / 1000); last = now; frame++;
   if (state !== 'paused') step(dt); else { updateCamera(0, simT); }
-  renderer.render(scene, camera);
+  camera.updateMatrixWorld();
+  render();
+  perfTick(ms);
   // fps + auto graphics
   clock.fpsT += now - (clock.prev || now); clock.prev = now; clock.n++;
   if (clock.fpsT >= 1000) {
     fpsNow = clock.n * 1000 / clock.fpsT; clock.fpsT = 0; clock.n = 0;
-    if (settings.gfx === 'auto' && !LOW && state === 'play') { fpsLowRun = fpsNow < 42 ? fpsLowRun + 1 : 0; if (fpsLowRun >= 3) { setLow(true); toast('Graphics set to Low for smoother sailing'); } }
-    if (!$('settings').classList.contains('hidden')) $('gfxNote').textContent = `Now: ${LOW ? 'Low' : 'High'} · ${fpsNow | 0} fps` + (settings.gfx === 'auto' ? ' · Auto drops to Low if fps stays low' : '');
+    if (settings.gfx === 'auto' && state === 'play') {
+      if (!LOW) { // fall back: badly slow, or still slow after dynamic resolution has done all it can
+        fpsLowRun = fpsNow < 30 || (fpsNow < 42 && dyn <= DYN_MIN + 0.01) ? fpsLowRun + 1 : 0;
+        if (fpsLowRun >= 3) { setLow(true); upLocked = true; fpsLowRun = 0; toast('Graphics set to Low for smoother sailing'); }
+      } else if (!upLocked) { // step up only after a sustained run of fast frames at full resolution
+        fpsFastRun = fpsNow >= 56 && dyn >= 1 ? fpsFastRun + 1 : 0;
+        if (fpsFastRun >= 8) { fpsFastRun = 0; dyn = 0.85; setLow(false); toast('Smooth sailing — graphics raised to High'); }
+      }
+    }
+    if (!$('settings').classList.contains('hidden')) $('gfxNote').textContent = gfxNoteText();
+  }
+  if (settings.fps) {
+    fpsT += ms; if (fpsT > 500) { fpsT = 0; if (!fpsEl) fpsEl = $('fpsBox');
+      fpsEl.textContent = `${fpsNow | 0} fps · ${ftAvg.toFixed(1)} ms · ${LOW ? 'Low' : 'High'} ${Math.round(dyn * 100)}% · ${renderer.domElement.width}×${renderer.domElement.height} · ${frameCalls} calls · ${(frameTris / 1000).toFixed(0)}k tris`; }
   }
 }
 
@@ -680,7 +772,10 @@ function loop(now) {
 newPlayer();
 spawnEnemy('merchant'); spawnEnemy('merchant'); spawnEnemy('hunter');
 setCam(camMode);
-if (settings.gfx === 'low') setLow(true, true); else resize();
+// Auto starts Low on touch devices (phones), High elsewhere
+setLow(settings.gfx === 'low' || (settings.gfx === 'auto' && isTouch), true);
+$('fpsBox').classList.toggle('hidden', !settings.fps);
+for (const s of ships) s.place();
 setSound(settings.sound);
 initTitle();
 camera.position.set(player.x + 60, 20, player.z + 60);
@@ -692,4 +787,5 @@ window.__ps3d = {
   get state() { return state; }, get player() { return player; }, ships, loot, balls, settings, get LOW() { return LOW; }, get fps() { return fpsNow; },
   get save() { return save; }, setCam, setLow, fire: s => fire(player, s), damage: (s, d) => damage(s, d, null), dock: () => { canDock = true; dock(); }, start: startGame, spawnEnemy, aimFor,
   get cam() { return camMode; }, step, setThrottle, renderer, scene, camera, setLook: (y, p) => { lyaw = y; lpitch = p; lookIdle = 0; },
+  get dyn() { return dyn; }, setDyn: (v, lock = true) => { dyn = v; dynLock = lock; resize(); }, get frame() { return { calls: frameCalls, tris: frameTris, ftAvg, post: !LOW && !!post, shadows: renderer.shadowMap.enabled }; },
 };

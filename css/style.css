@@ -30,7 +30,7 @@ button{font-family:inherit;cursor:pointer}
 .toast{font-size:14px;color:#f2e2b6;background:rgba(18,14,10,.82);border:1px solid #7a5f34;border-radius:5px;padding:4px 12px;text-shadow:0 1px 2px #000;animation:tf 2.6s forwards}
 @keyframes tf{0%{opacity:0;transform:translateY(6px)}10%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
 #labels{position:absolute;inset:0;overflow:hidden}
-.plate{position:absolute;transform:translate(-50%,-100%);text-align:center;font-size:11px;white-space:nowrap;text-shadow:0 1px 2px #000,0 0 4px #000;color:#f0dcae}
+.plate{position:absolute;left:0;top:0;will-change:transform;transform:translate(-50%,-100%);text-align:center;font-size:11px;white-space:nowrap;text-shadow:0 1px 2px #000,0 0 4px #000;color:#f0dcae}
 .plate .bar{height:5px;width:70px;margin:2px auto 0;min-width:0}
 .plate.hunter{color:#ff9a86}.plate.hunter .bar i{background:linear-gradient(#e0574a,#7b1d16)}
 #speedo{position:absolute;right:calc(96px + var(--sar));bottom:calc(214px + var(--sab));padding:3px 9px;font-size:12px;color:#e8d3a0}
@@ -107,3 +107,10 @@ input[type=range]{accent-color:#6b4520;width:140px}
 a.pbtn{box-sizing:border-box;text-align:center;text-decoration:none}
 .pbtn.alt{background:linear-gradient(#cdb488,#937049);color:#2a1a0c;margin-top:10px}
 .sbtn{padding:7px 16px;font-size:13px;font-weight:bold;border-radius:6px;border:1.5px solid #2a1a0c;background:linear-gradient(#5a432a,#2e2116);color:#f3e2b6}
+
+/* FPS meter (Settings → FPS meter) */
+#fpsBox{position:fixed;left:50%;top:max(4px,env(safe-area-inset-top));transform:translateX(-50%);z-index:30;pointer-events:none;font:600 11px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#d8f0c8;background:rgba(10,14,12,.62);padding:3px 8px;border-radius:6px;white-space:nowrap;letter-spacing:.2px}
+#fpsBox.hidden{display:none}
+/* cheap vignette for the Low tier (High does this in the post shader) */
+#lowVig{position:fixed;inset:0;pointer-events:none;z-index:1;display:none;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,0) 55%,rgba(8,6,4,.38) 100%)}
+body.gfxLow #lowVig{display:block}

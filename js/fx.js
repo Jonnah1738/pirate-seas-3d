@@ -5,7 +5,7 @@ import { softDot, puff, foamTex } from './textures.js';
 
 export class Particles {
   constructor(max, map, additive = false) {
-    this.max = max; this.n = 0;
+    this.max = max; this.cap = max; this.n = 0;
     this.p = new Float32Array(max * 3); this.v = new Float32Array(max * 3);
     this.c = new Float32Array(max * 4); this.s = new Float32Array(max);
     this.age = new Float32Array(max); this.life = new Float32Array(max); this.s0 = new Float32Array(max); this.s1 = new Float32Array(max);
@@ -14,7 +14,7 @@ export class Particles {
     g.setAttribute('position', new THREE.BufferAttribute(this.p, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aCol', new THREE.BufferAttribute(this.c, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aSize', new THREE.BufferAttribute(this.s, 1).setUsage(THREE.DynamicDrawUsage));
-    this.u = { map: { value: map }, scale: { value: 400 }, fogCol: { value: new THREE.Color(0x7d7a70) }, fogD: { value: 0.0011 } };
+    this.u = { map: { value: map }, scale: { value: 400 }, fogCol: { value: new THREE.Color(0x868173) }, fogD: { value: 0.00105 } };
     this.mat = new THREE.ShaderMaterial({
       uniforms: this.u, transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       vertexShader: `attribute vec4 aCol; attribute float aSize; uniform float scale; varying vec4 vC; varying float vF; uniform float fogD;
@@ -29,7 +29,7 @@ export class Particles {
     this.mesh = new THREE.Points(g, this.mat); this.mesh.frustumCulled = false; this.g = g;
   }
   emit(x, y, z, vx, vy, vz, o) {
-    if (this.n >= this.max) return;
+    if (this.n >= this.cap) return;
     const i = this.n++, k = i * 3;
     this.p[k] = x; this.p[k + 1] = y; this.p[k + 2] = z; this.v[k] = vx; this.v[k + 1] = vy; this.v[k + 2] = vz;
     this.age[i] = 0; this.life[i] = o.life || 1; this.s0[i] = o.s0 || 1; this.s1[i] = o.s1 ?? this.s0[i];
@@ -49,28 +49,35 @@ export class Particles {
       this.c[i * 4 + 3] = this.a0[i] * (f < 0.1 ? f / 0.1 : 1 - (f - 0.1) / 0.9);
       i++;
     }
-    this.g.setDrawRange(0, this.n);
-    for (const a of ['position', 'aCol', 'aSize']) this.g.attributes[a].needsUpdate = true;
+    this.g.setDrawRange(0, this.n); this.mesh.visible = this.n > 0;
+    if (this.n || this.was) { const A = this.g.attributes; for (const a of [A.position, A.aCol, A.aSize]) { a.clearUpdateRanges(); a.addUpdateRange(0, this.n * a.itemSize); a.needsUpdate = true; } }
+    this.was = this.n > 0;
   }
   kill(i) {
     const j = --this.n; if (i === j) return;
     for (let q = 0; q < 3; q++) { this.p[i * 3 + q] = this.p[j * 3 + q]; this.v[i * 3 + q] = this.v[j * 3 + q]; }
     for (let q = 0; q < 4; q++) this.c[i * 4 + q] = this.c[j * 4 + q];
-    for (const a of [this.age, this.life, this.s0, this.s1, this.a0, this.gr, this.dr, this.wat, this.s]) a[i] = a[j];
+    this.age[i] = this.age[j]; this.life[i] = this.life[j]; this.s0[i] = this.s0[j]; this.s1[i] = this.s1[j]; this.a0[i] = this.a0[j];
+    this.gr[i] = this.gr[j]; this.dr[i] = this.dr[j]; this.wat[i] = this.wat[j]; this.s[i] = this.s[j];
   }
 }
 
+// Particle budgets: High 600/240/520, Low 180/80/160 (switchable at runtime without reallocating).
+const CAPS = { high: [600, 240, 520], low: [180, 80, 160] };
 export function makeFX(scene, low) {
-  const smoke = new Particles(low ? 260 : 700, puff());
-  const spark = new Particles(low ? 120 : 300, softDot(), true);
-  const bits = new Particles(low ? 250 : 650, softDot());
+  const smoke = new Particles(CAPS.high[0], puff());
+  const spark = new Particles(CAPS.high[1], softDot(), true);
+  const bits = new Particles(CAPS.high[2], softDot());
   [smoke, bits, spark].forEach(p => scene.add(p.mesh));
   smoke.mesh.renderOrder = 3; bits.mesh.renderOrder = 2; spark.mesh.renderOrder = 4;
   const R = Math.random;
   const fx = {
     smoke, spark, bits, low,
+    setLow(l) { fx.low = low = l; const c = CAPS[l ? 'low' : 'high']; smoke.cap = c[0]; spark.cap = c[1]; bits.cap = c[2]; },
+    setFog(col, d) { for (const p of [smoke, spark, bits]) { p.u.fogCol.value.copy(col); p.u.fogD.value = d; } },
     setScale(h) { for (const p of [smoke, spark, bits]) p.u.scale.value = h * 0.5; },
     update(dt, t) { smoke.update(dt, t); spark.update(dt, t); bits.update(dt, t); },
+    count() { return smoke.n + spark.n + bits.n; },
     muzzle(pos, dir, sv) { // dir: unit horizontal outward; sv: ship velocity
       spark.emit(pos.x, pos.y, pos.z, dir.x * 6, 1, dir.z * 6, { life: 0.12, s0: 5, s1: 9, col: [1, 0.7, 0.35], a: 1 });
       spark.emit(pos.x + dir.x, pos.y, pos.z + dir.z, dir.x * 12, 0, dir.z * 12, { life: 0.09, s0: 3, s1: 5, col: [1, 0.9, 0.6] });
@@ -97,13 +104,14 @@ export function makeFX(scene, low) {
       bits.emit(x, y, z, vx + (R() - .5) * 2, 1.5 + R() * 2.5 * k, vz + (R() - .5) * 2, { life: 0.7, s0: 0.5, s1: 1.4, col: [0.85, 0.9, 0.88], a: 0.55, g: 9.8 });
     },
   };
+  fx.setLow(low);
   return fx;
 }
 
 // Foam ribbon following a ship's stern; width grows and fades with age.
 export class Wake {
   constructor(scene, n = 70) {
-    this.n = n; this.pts = []; // {x,z,t,w,dx,dz}
+    this.n = n; this.pts = []; this.h = new Float32Array(n); this.f = 0; // pts: {x,z,t,w,dx,dz,s}
     this.pos = new Float32Array(n * 2 * 3); this.uv = new Float32Array(n * 2 * 2); this.al = new Float32Array(n * 2);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -111,7 +119,7 @@ export class Wake {
     g.setAttribute('aA', new THREE.BufferAttribute(this.al, 1).setUsage(THREE.DynamicDrawUsage));
     const idx = []; for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } g.setIndex(idx);
     if (!Wake.mat) Wake.mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: foamTex() }, fogD: { value: 0.0011 }, fogCol: { value: new THREE.Color(0x7d7a70) } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { map: { value: foamTex() }, fogD: { value: 0.00105 }, fogCol: { value: new THREE.Color(0x868173) } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       vertexShader: `attribute float aA; varying float vA; varying vec2 vUv; varying vec3 vW; void main(){ vA=aA; vUv=uv; vec4 w = modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
       fragmentShader: `uniform sampler2D map; uniform float fogD; uniform vec3 fogCol; varying float vA; varying vec2 vUv; varying vec3 vW;
@@ -123,18 +131,24 @@ export class Wake {
     });
     this.mesh = new THREE.Mesh(g, Wake.mat); this.mesh.frustumCulled = false; this.g = g; scene.add(this.mesh);
   }
-  update(x, z, dx, dz, speed, halfW, t, now) {
+  update(x, z, dx, dz, speed, halfW, t, now, step = 1) {
     const P = this.pts, last = P[P.length - 1];
-    if (!last || Math.hypot(x - last.x, z - last.z) > 2.2 || now - last.t > 0.6) { P.push({ x, z, t: now, w: halfW, dx, dz, s: Math.min(1, speed / 6) }); if (P.length > this.n) P.shift(); }
+    if (!last || Math.hypot(x - last.x, z - last.z) > 2.6 || now - last.t > 0.6) {
+      const o = P.length >= this.n ? P.shift() : {}; o.x = x; o.z = z; o.t = now; o.w = halfW; o.dx = dx; o.dz = dz; o.s = Math.min(1, speed / 6); P.push(o);
+    }
     const n = P.length;
     for (let i = 0; i < this.n; i++) {
-      const p = P[Math.min(i, n - 1)] || { x, z, t: now, w: 0, dx, dz, s: 0 };
+      const p = P[Math.min(i, n - 1)];
+      if (!p) { this.al[i * 2] = this.al[i * 2 + 1] = 0; continue; }
       const age = now - p.t, w = p.w * (0.75 + Math.min(1, age) * 0.25) + age * 0.9, life = 8;
-      const px = -p.dz, pz = p.dx, h = waveHeight(p.x, p.z, t) + 0.08;
+      // the wave height of old, wide trail points changes slowly: refresh every point only every `step` frames
+      if (i >= n - 3 || (i + this.f) % step === 0) this.h[i] = waveHeight(p.x, p.z, t) + 0.08;
+      const px = -p.dz, pz = p.dx, h = this.h[i];
       const k = i * 6; this.pos[k] = p.x + px * w; this.pos[k + 1] = h; this.pos[k + 2] = p.z + pz * w; this.pos[k + 3] = p.x - px * w; this.pos[k + 4] = h; this.pos[k + 5] = p.z - pz * w;
       this.uv[i * 4] = 0; this.uv[i * 4 + 1] = i; this.uv[i * 4 + 2] = 1; this.uv[i * 4 + 3] = i;
       const fade = Math.max(0, 1 - age / life), a = i >= n ? 0 : fade * fade * p.s * Math.min(1, (n - 1 - i) / 3) * 0.85; this.al[i * 2] = this.al[i * 2 + 1] = a;
     }
+    this.f++;
     for (const a of ['position', 'uv', 'aA']) this.g.attributes[a].needsUpdate = true;
   }
   dispose(scene) { scene.remove(this.mesh); this.g.dispose(); }
