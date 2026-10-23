@@ -465,6 +465,7 @@ $('reBtn').onclick = () => {
 
 // ---------- input ----------
 const keys = {}; let lastS = 0;
+const cap = (el, id) => { try { el.setPointerCapture(id); } catch (_) { /* synthetic or already-released pointer */ } };
 addEventListener('keydown', e => {
   if (e.repeat && !['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract'].includes(e.code)) return;
   keys[e.code] = true; audioInit();
@@ -474,7 +475,7 @@ addEventListener('keydown', e => {
   const p = player;
   if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Equal' || e.code === 'NumpadAdd') setThrottle(p.throttle + 0.1);
   if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
-    const now = performance.now(); if (!e.repeat && (e.code === 'KeyS' || e.code === 'ArrowDown') && now - lastS < 320) setThrottle(0); else setThrottle(p.throttle - 0.1); lastS = now;
+    const now = performance.now(); if (!e.repeat && (e.code === 'KeyS' || e.code === 'ArrowDown') && now - lastS < 280) setThrottle(0); else setThrottle(p.throttle - 0.1); lastS = now;
   }
   if (e.code === 'KeyX') setThrottle(0);
   if (e.code === 'KeyQ') fire(p, 'port');
@@ -491,7 +492,7 @@ let stickX = 0, stickId = null;
 (() => {
   const el = $('stick'), knob = $('knob');
   const mv = e => { const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2; let dx = e.clientX - cx, dy = e.clientY - cy; const m = r.width * 0.36, l = Math.hypot(dx, dy); if (l > m) { dx *= m / l; dy *= m / l; } knob.style.transform = `translate(${dx}px,${dy * 0.35}px)`; stickX = clamp(dx / m, -1, 1); };
-  el.addEventListener('pointerdown', e => { audioInit(); stickId = e.pointerId; el.setPointerCapture(e.pointerId); mv(e); e.preventDefault(); });
+  el.addEventListener('pointerdown', e => { audioInit(); stickId = e.pointerId; cap(el, e.pointerId); mv(e); e.preventDefault(); });
   el.addEventListener('pointermove', e => { if (e.pointerId === stickId) mv(e); });
   const up = e => { if (e.pointerId !== stickId) return; stickId = null; stickX = 0; knob.style.transform = ''; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
@@ -500,7 +501,7 @@ let stickX = 0, stickId = null;
 (() => {
   const tr = $('track'); let id = null, lastTap = 0;
   const mv = e => { const r = tr.getBoundingClientRect(); setThrottle(1 - (e.clientY - r.top) / r.height); };
-  const down = e => { audioInit(); const now = performance.now(); if (now - lastTap < 300) { setThrottle(0); lastTap = 0; return; } lastTap = now; id = e.pointerId; $('lever').setPointerCapture(e.pointerId); mv(e); e.preventDefault(); };
+  const down = e => { audioInit(); const now = performance.now(); if (now - lastTap < 300) { setThrottle(0); lastTap = 0; return; } lastTap = now; id = e.pointerId; cap($('lever'), e.pointerId); mv(e); e.preventDefault(); };
   tr.addEventListener('pointerdown', down); $('handle').addEventListener('pointerdown', down);
   $('lever').addEventListener('pointermove', e => { if (e.pointerId === id) mv(e); });
   $('lever').addEventListener('pointerup', e => { if (e.pointerId === id) id = null; });
@@ -511,7 +512,7 @@ $('fireS').addEventListener('pointerdown', e => { audioInit(); e.preventDefault(
 $('camBtn').addEventListener('click', () => setCam(camMode === 'first' ? 'third' : 'first'));
 // drag to look / pinch zoom on the canvas
 const ptrs = new Map(); let pinch0 = 0, dist0 = 44;
-canvas.addEventListener('pointerdown', e => { audioInit(); canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); dist0 = camDist; } });
+canvas.addEventListener('pointerdown', e => { audioInit(); cap(canvas, e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); dist0 = camDist; } });
 canvas.addEventListener('pointermove', e => {
   const p = ptrs.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;

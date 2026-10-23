@@ -49,7 +49,7 @@ export function buildIsland(scene, low) {
   const leaf = new THREE.MeshStandardMaterial({ color: 0x2d3a1e, roughness: 0.9, side: THREE.DoubleSide });
   const B = { wood: [], stone: [], roof: [], glow: [], leaf: [] };
   const box = new THREE.BoxGeometry(1, 1, 1).toNonIndexed(), cyl = new THREE.CylinderGeometry(1, 1, 1, 8).toNonIndexed();
-  const prism = (() => { const s = new THREE.Shape(); s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 0.6); s.lineTo(-0.5, 0); const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }); g.translate(0, 0, -0.5); return g.toNonIndexed(); })();
+  const prism = (() => { const s = new THREE.Shape(); s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 0.6); s.lineTo(-0.5, 0); const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }); g.translate(0, 0, -0.5); return g.index ? g.toNonIndexed() : g; })();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const put = (k, g, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0) => { q.setFromEuler(e.set(rx, ry, rz)); m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sx, sy, sz)); const c = g.clone(); c.applyMatrix4(m4); if (!c.attributes.uv) return; B[k].push(c); };
   // pier
