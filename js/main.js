@@ -348,7 +348,7 @@ function setLow(l, force) {
 }
 function resize() {
   const w = innerWidth, h = innerHeight, dpr = devicePixelRatio || 1;
-  const pr = LOW ? Math.min(dpr, 1) * (isTouch ? 0.8 : 0.9) : Math.min(dpr, isTouch ? 2 : 1.5);
+  const pr = LOW ? Math.min(dpr, 1) * (isTouch ? 1 : 0.9) : Math.min(dpr, isTouch ? 1.75 : 1.5);
   renderer.setPixelRatio(pr); renderer.setSize(w, h, false); canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   camera.aspect = w / h; camera.updateProjectionMatrix(); fx.setScale(h * pr);
 }

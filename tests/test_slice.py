@@ -103,7 +103,13 @@ with sync_playwright() as pw:
     clear_enemies(pg)
     pg.evaluate("""()=>{const p=__ps3d.player;p.x=600;p.z=1500;p.h=0;p.throttle=0;p.speed=0;p.hp=160;
       const h=__ps3d.spawnEnemy('hunter');h.x=p.x+200;h.z=p.z;h.h=0;h.throttle=0;h.speed=0;h.place();window.__h=h;}""")
-    adv(pg, 25); hpP = P(pg)['hp']; check('hunter sails and fires back', hpP < 160, f'player hp {hpP:.0f}')
+    pg.evaluate("()=>{window.__hs=0;const f=()=>{for(const b of __ps3d.balls) if(b.on&&b.owner===__h&&!b.__c){b.__c=1;__hs++;}};window.__hf=f;}")
+    hpP = 160; t0 = P(pg)
+    for _ in range(30):
+        pg.evaluate("()=>{for(let i=0;i<40;i++){__ps3d.step(0.05);__hf();}}"); hpP = P(pg)['hp']
+        if hpP < 160: break
+    hs = pg.evaluate("()=>__hs"); hd = pg.evaluate("()=>Math.hypot(__h.x-__ps3d.player.x,__h.z-__ps3d.player.z)")
+    check('hunter sails, fires back and hits', hs > 0 and hpP < 160, f'shots {hs}, player hp {hpP:.0f}, range {hd:.0f} m')
     # port
     clear_enemies(pg)
     pg.evaluate("()=>{const p=__ps3d.player;p.hp=90;p.x=10.5;p.z=0;}")
