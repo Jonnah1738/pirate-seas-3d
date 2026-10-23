@@ -737,7 +737,7 @@ function render() {
     _sunUv.set(_sunP.x * 0.5 + 0.5, _sunP.y * 0.5 + 0.5); postOpt.sunAmt = on * 0.55; postOpt.flash = Math.max(0, hitFlash) * 1.6;
     post.render(scene, camera, postOpt);
   } else renderer.render(scene, camera);
-  frameCalls = renderer.info.render.calls; frameTris = renderer.info.render.triangles;
+  frameCalls = renderer.info.render.calls; frameTris = renderer.info.render.triangles; renderer.info.autoReset = true;
 }
 let fpsEl = null, fpsT = 0;
 function loop(now) {
