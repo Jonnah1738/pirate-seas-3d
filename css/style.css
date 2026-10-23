@@ -55,7 +55,7 @@ button{font-family:inherit;cursor:pointer}
 #lever{position:absolute;right:calc(10px + var(--sar));bottom:calc(14px + var(--sab));width:76px;padding:5px 6px;display:flex;flex-direction:column;align-items:center;gap:5px;touch-action:none}
 #lever .lb{width:100%;padding:5px 0;font-size:11px;font-weight:bold;letter-spacing:1px;border-radius:5px;border:1px solid #8a6c3c;background:linear-gradient(#4a3f30,#221d17);color:#f0dca8}
 #lever #thStop{color:#ffb4a6}
-#track{position:relative;width:26px;height:120px;border-radius:13px;background:linear-gradient(90deg,#0b0a09,#26221c 50%,#0b0a09);border:1.5px solid #5d4a2e;touch-action:none}
+#track{position:relative;width:26px;height:120px;margin:10px 0;border-radius:13px;background:linear-gradient(90deg,#0b0a09,#26221c 50%,#0b0a09);border:1.5px solid #5d4a2e;touch-action:none}
 #fillT{position:absolute;left:4px;right:4px;bottom:4px;border-radius:9px;background:linear-gradient(#e2b65a,#7a531f);height:0}
 #handle{position:absolute;left:50%;width:54px;height:22px;margin-left:-27px;bottom:0;transform:translateY(50%);border-radius:6px;background:linear-gradient(#f1d58c,#a87c34 55%,#5e4119);border:1.5px solid #2a1d0c;box-shadow:0 3px 6px rgba(0,0,0,.6)}
 #handle i{position:absolute;left:8px;right:8px;top:9px;height:2px;background:rgba(40,25,10,.55)}

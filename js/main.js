@@ -353,6 +353,9 @@ function resize() {
   camera.aspect = w / h; camera.updateProjectionMatrix(); fx.setScale(h * pr);
 }
 addEventListener('resize', resize);
+// save when the tab is hidden or closed (phones kill background tabs)
+addEventListener('pagehide', () => { if (save && state !== 'title') writeSave(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && save && state !== 'title') writeSave(); });
 
 // ---------- UI ----------
 let state = 'title';
@@ -661,6 +664,6 @@ requestAnimationFrame(t => { last = t; loop(t); });
 // test / debug hooks
 window.__ps3d = {
   get state() { return state; }, get player() { return player; }, ships, loot, balls, settings, get LOW() { return LOW; }, get fps() { return fpsNow; },
-  get save() { return save; }, setCam, setLow, fire: s => fire(player, s), dock: () => { canDock = true; dock(); }, start: startGame, spawnEnemy, aimFor,
+  get save() { return save; }, setCam, setLow, fire: s => fire(player, s), damage: (s, d) => damage(s, d, null), dock: () => { canDock = true; dock(); }, start: startGame, spawnEnemy, aimFor,
   get cam() { return camMode; }, step, setThrottle, renderer, scene, camera, setLook: (y, p) => { lyaw = y; lpitch = p; lookIdle = 0; },
 };
