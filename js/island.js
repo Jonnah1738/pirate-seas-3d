@@ -20,7 +20,7 @@ export function islandH(x, z) {
   return h - 1.2;
 }
 export const PIER = { x: 0, z0: ISLAND.R * 0.82 + 10, z1: ISLAND.R * 0.82 + 78, w: 6 };
-export const DOCK = { x: 10.5, z: PIER.z1 - 14, heading: 0 }; // berth alongside the pier, bow toward shore
+export const DOCK = { x: 10.5, z: PIER.z1 - 14, heading: Math.PI }; // berth alongside the pier, bow toward open sea
 
 export function buildIsland(scene, low) {
   const group = new THREE.Group();
@@ -35,7 +35,7 @@ export function buildIsland(scene, low) {
     if (y > 3 && n > 0.55) c = [0.26, 0.31, 0.18];
     if (y > 16) c = [0.42, 0.4, 0.37];
     if (y < -0.5) c = [0.3, 0.3, 0.26];
-    col.push(...c);
+    col.push(c[0] * 1.35, c[1] * 1.35, c[2] * 1.35);
   }
   for (let i = 0; i < rings; i++) for (let j = 0; j < segs; j++) { const a = i * segs + j, b = i * segs + (j + 1) % segs, c = a + segs, d = b + segs; idx.push(a, b, c, b, d, c); }
   const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); tg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); tg.setIndex(idx); tg.computeVertexNormals();

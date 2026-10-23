@@ -98,3 +98,6 @@ h1 span{color:#c55a3c;font-weight:bold}
 #sunk p{font-size:14px;line-height:1.5}
 input[type=range]{accent-color:#6b4520;width:140px}
 @media (max-height:500px){#stick{width:112px;height:112px}#knob{width:48px;height:48px;margin:-24px 0 0 -24px}#track{height:84px}.fire{width:66px;height:66px}#speedo{bottom:calc(174px + var(--sab))}#map{width:84px;height:84px}}
+/* port: panel on the left on wide screens so the harbour stays in view */
+@media (min-width:820px){#port{justify-content:flex-start;padding-left:max(32px,env(safe-area-inset-left));background:linear-gradient(90deg,rgba(5,4,3,.72),rgba(5,4,3,.12) 52%,rgba(5,4,3,0))}}
+#title{align-items:flex-end;padding-bottom:max(5vh,env(safe-area-inset-bottom))}

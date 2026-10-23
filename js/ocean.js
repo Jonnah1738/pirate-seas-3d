@@ -77,7 +77,7 @@ export function makeSky(scene) {
 
 export const MAXS = 8; // hull cut-outs (keeps water out of decks)
 export const OCEAN_U = {
-  uTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(-0.55, 0.22, -0.8).normalize() },
+  uTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(-0.62, 0.2, 0.76).normalize() },
   uZenith: { value: new THREE.Color(0x2b333b) }, uHorizon: { value: new THREE.Color(0x8a8578) }, uGround: { value: new THREE.Color(0x1d2225) },
   uSunCol: { value: new THREE.Color(0xffb46a) }, uFogCol: { value: new THREE.Color(0x7d7a70) }, uFogD: { value: 0.0011 },
   uCenter: { value: new THREE.Vector2() }, uDetail: { value: 1 },

@@ -93,7 +93,7 @@ export function foamTex() {
 }
 export function ground(seed = 7) {
   const r = rng(seed); const [c, g] = cv(256, 256);
-  g.fillStyle = '#5a5246'; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = '#857a68'; g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 400; i++) { const x = r() * 256, y = r() * 256, rad = 2 + r() * 14; g.fillStyle = `rgba(${r() < .5 ? '30,28,24' : '120,110,92'},${0.1 + r() * 0.2})`; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill(); }
   grain(g, 256, 256, r, 40); return tex(c, [24, 24]);
 }

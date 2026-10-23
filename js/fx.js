@@ -115,8 +115,8 @@ export class Wake {
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       vertexShader: `attribute float aA; varying float vA; varying vec2 vUv; varying vec3 vW; void main(){ vA=aA; vUv=uv; vec4 w = modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
       fragmentShader: `uniform sampler2D map; uniform float fogD; uniform vec3 fogCol; varying float vA; varying vec2 vUv; varying vec3 vW;
-        void main(){ float f = texture2D(map, vW.xz*0.09).a*0.8 + texture2D(map, vW.xz*0.03+0.3).a*0.6; float edge = 1.0 - pow(abs(vUv.x*2.0-1.0), 2.0);
-          float a = clamp(vA*edge*(0.35+f), 0.0, 0.9); float d = length(cameraPosition - vW); vec3 c = mix(vec3(0.78,0.82,0.8), fogCol, 1.0-exp(-pow(fogD*d,2.0)));
+        void main(){ float f = texture2D(map, vW.xz*0.09).a*0.8 + texture2D(map, vW.xz*0.03+0.3).a*0.6; float u = abs(vUv.x*2.0-1.0); float edge = smoothstep(1.0, 0.55, u) * (0.55 + 0.45*smoothstep(0.0, 0.5, u));
+          float a = clamp(vA*edge*smoothstep(0.25, 1.1, f), 0.0, 0.6); float d = length(cameraPosition - vW); vec3 c = mix(vec3(0.66,0.7,0.68), fogCol, 1.0-exp(-pow(fogD*d,2.0)));
           gl_FragColor = vec4(c, a);
           #include <colorspace_fragment>
         }`,
@@ -129,11 +129,11 @@ export class Wake {
     const n = P.length;
     for (let i = 0; i < this.n; i++) {
       const p = P[Math.min(i, n - 1)] || { x, z, t: now, w: 0, dx, dz, s: 0 };
-      const age = now - p.t, w = p.w + age * 1.6, life = 9;
+      const age = now - p.t, w = p.w * (0.75 + Math.min(1, age) * 0.25) + age * 0.9, life = 8;
       const px = -p.dz, pz = p.dx, h = waveHeight(p.x, p.z, t) + 0.08;
       const k = i * 6; this.pos[k] = p.x + px * w; this.pos[k + 1] = h; this.pos[k + 2] = p.z + pz * w; this.pos[k + 3] = p.x - px * w; this.pos[k + 4] = h; this.pos[k + 5] = p.z - pz * w;
       this.uv[i * 4] = 0; this.uv[i * 4 + 1] = i; this.uv[i * 4 + 2] = 1; this.uv[i * 4 + 3] = i;
-      const a = i >= n ? 0 : Math.max(0, 1 - age / life) * p.s * (i === n - 1 ? 0.3 : 1); this.al[i * 2] = this.al[i * 2 + 1] = a;
+      const fade = Math.max(0, 1 - age / life), a = i >= n ? 0 : fade * fade * p.s * Math.min(1, (n - 1 - i) / 3) * 0.85; this.al[i * 2] = this.al[i * 2 + 1] = a;
     }
     for (const a of ['position', 'uv', 'aA']) this.g.attributes[a].needsUpdate = true;
   }

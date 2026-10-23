@@ -123,7 +123,7 @@ function fire(s, side) {
   let aim = null;
   if (s === player) aim = aimFor(s, side); else if (s.ai && s.ai.aim) aim = s.ai.aim;
   ms.forEach((m, i) => s.queue.push({ t: i * 0.09 + R() * 0.05, m, sx, aim }));
-  if (s === player) { shake = Math.max(shake, 0.25); }
+  if (s === player) { shake = Math.max(shake, 0.25); if (camMode === 'third' && lookIdle > 1) camSwing = { sx, t: 2.6 }; }
   return true;
 }
 function aimFor(s, side) { // aim assist: elevation for the nearest enemy in the broadside arc, with lead
@@ -291,7 +291,7 @@ function spawnEnemy(kind, nearPlayer) {
 
 // ---------- camera ----------
 let camMode = settings.cam === 'first' ? 'first' : 'third';
-let lyaw = 0, lpitch = 0, lookIdle = 9, camDist = 44, shake = 0;
+let lyaw = 0, lpitch = 0, lookIdle = 9, camDist = 44, shake = 0, camSwing = { sx: 0, t: 0 };
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3();
 function setCam(m) {
   camMode = m; settings.cam = m; saveSettings(); lyaw = 0; lpitch = 0;
@@ -304,17 +304,23 @@ function updateCamera(dt, t) {
   const s = player; if (!s) return;
   lookIdle += dt;
   if (state === 'title') {
-    const a = t * 0.05 + 2.2; camPos.set(s.x + Math.cos(a) * 58, s.y + 15, s.z + Math.sin(a) * 58);
-    camera.position.lerp(camPos, 1 - Math.exp(-dt * 2)); camera.lookAt(s.x, s.y + 6, s.z); return;
+    const a = t * 0.05 + 2.2; camPos.set(s.x + Math.cos(a) * 52, s.y + 13, s.z + Math.sin(a) * 52);
+    camera.position.lerp(camPos, 1 - Math.exp(-dt * 2)); camera.lookAt(s.x, s.y - 3, s.z); return;
+  }
+  if (state === 'port') { // frame the berth and the harbour town
+    camPos.set(DOCK.x + 62, 17, DOCK.z + 34); if (camera.position.distanceTo(camPos) > 150) camera.position.copy(camPos); else camera.position.lerp(camPos, 1 - Math.exp(-dt * 2)); camera.lookAt(DOCK.x - 38, 8, DOCK.z - 28); return;
   }
   if (camMode === 'third') {
-    if (lookIdle > 2.5) { lyaw *= Math.exp(-dt * 1.2); lpitch *= Math.exp(-dt * 1.2); }
+    if (camSwing.t > 0) { // swing the chase cam behind the opposite quarter so the broadside and its target are in view
+      camSwing.t -= dt; if (lookIdle < 0.5 && dt > 0 && camSwing.t < 2.5) camSwing.t = 0;
+      else { lyaw += (-camSwing.sx * 0.85 - lyaw) * (1 - Math.exp(-dt * 3)); lookIdle = 2.4; }
+    } else if (lookIdle > 2.5) { lyaw *= Math.exp(-dt * 1.2); lpitch *= Math.exp(-dt * 1.2); }
     const yaw = s.h + lyaw, p = clamp(0.24 + lpitch, -0.05, 1.2);
     const tx = s.x, ty = s.y + 5, tz = s.z;
     camPos.set(tx + Math.sin(yaw) * Math.cos(p) * camDist, ty + Math.sin(p) * camDist, tz + Math.cos(yaw) * Math.cos(p) * camDist);
     const wh = waveHeight(camPos.x, camPos.z, t) + 2; if (camPos.y < wh) camPos.y = wh;
     camera.position.lerp(camPos, 1 - Math.exp(-dt * (state === 'play' ? 6 : 2)));
-    const [fx_, fz] = s.fwd(); camLook.set(tx + fx_ * 10, ty, tz + fz * 10);
+    camLook.set(tx - Math.sin(yaw) * 10, ty, tz - Math.cos(yaw) * 10);
     camera.lookAt(camLook);
   } else {
     _e.set(s.pitch * 0.6, s.h, s.roll * 0.6, 'YXZ'); _q.setFromEuler(_e);
@@ -386,7 +392,7 @@ function updateHUD() {
     $(id).classList.toggle('aim', r <= 0 && !!aimFor(p, side));
   }
   const nearDock = Math.hypot(p.x - DOCK.x, p.z - DOCK.z) < 55 && p.speed < 5 && !p.sinking;
-  $('dockBtn').classList.toggle('hidden', !nearDock); canDock = nearDock;
+  $('dockBtn').classList.toggle('hidden', !nearDock || state !== 'play'); canDock = nearDock;
   const z = inHarbour(p.x, p.z); $('zone').classList.toggle('hidden', !z); $('zone').textContent = '⚓ Harbour waters — safe';
 }
 let canDock = false;
@@ -656,5 +662,5 @@ requestAnimationFrame(t => { last = t; loop(t); });
 window.__ps3d = {
   get state() { return state; }, get player() { return player; }, ships, loot, balls, settings, get LOW() { return LOW; }, get fps() { return fpsNow; },
   get save() { return save; }, setCam, setLow, fire: s => fire(player, s), dock: () => { canDock = true; dock(); }, start: startGame, spawnEnemy, aimFor,
-  get cam() { return camMode; }, step, setThrottle, renderer, scene, camera, setLook: (y, p) => { lyaw = y; lpitch = p; lookIdle = -1e9; },
+  get cam() { return camMode; }, step, setThrottle, renderer, scene, camera, setLook: (y, p) => { lyaw = y; lpitch = p; lookIdle = 0; },
 };

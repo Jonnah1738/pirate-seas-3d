@@ -80,7 +80,7 @@ with sync_playwright() as pw:
     ok = pg.evaluate("()=>__ps3d.fire('star')"); check('starboard broadside fires', ok)
     rl = pg.evaluate("()=>__ps3d.player.reload.star"); check('reload timer starts', rl > 2.5, f'{rl:.2f}s')
     check('cannot refire while reloading', not pg.evaluate("()=>__ps3d.fire('star')"))
-    adv(pg, 0.9); pg.wait_for_timeout(250); pg.screenshot(path=OUT + 'combat.png')
+    adv(pg, 1.0); pg.wait_for_timeout(300); pg.screenshot(path=OUT + 'combat.png')
     hp1 = hp0
     for _ in range(10):
         adv(pg, 0.25); hp1 = pg.evaluate("()=>__m.hp")
@@ -108,7 +108,7 @@ with sync_playwright() as pw:
     clear_enemies(pg)
     pg.evaluate("()=>{const p=__ps3d.player;p.hp=90;p.x=10.5;p.z=0;}")
     pg.evaluate("()=>{const p=__ps3d.player;p.x=__ps3d.player.x;}")
-    pg.evaluate("()=>__ps3d.dock()"); pg.wait_for_timeout(1500)
+    pg.evaluate("()=>__ps3d.dock()"); adv(pg, 3); pg.wait_for_timeout(800)
     s = P(pg); check('docking opens port', s['state'] == 'port' and pg.is_visible('#port'), s['state'])
     pg.screenshot(path=OUT + 'port.png')
     g0 = s['gold']; pg.click('#sellAll'); s = P(pg); check('sell loot', s['gold'] > g0 and json.loads(s['cargo']) == {}, f"{g0} -> {s['gold']}")
@@ -131,6 +131,7 @@ with sync_playwright() as pw:
     pg.click('#setBtn'); pg.click('#gfxSeg button[data-v="low"]'); pg.click('#setClose')
     fl1 = fps_measure(pg, cdp, 1); fl4 = fps_measure(pg, cdp, 4)
     print('JS+GL ms/frame (rate, ms):', JSMS); JSMS.clear()
+    info = pg.evaluate("()=>{const i=__ps3d.renderer.info.render;return {calls:i.calls,tris:i.triangles}}"); print('draw calls/tris (Low, desktop):', info)
     print(f'FPS desktop 1280x720: High {fh1} (1x) / {fh4} (4x)   Low {fl1} (1x) / {fl4} (4x)')
     check('desktop: no console errors', not errs, errs[:5])
     ctx.close()
