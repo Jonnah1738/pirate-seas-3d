@@ -55,6 +55,7 @@
     <button id="newBtn" class="mid hidden">New Captain</button>
     <button id="tSetBtn" class="mid">Settings</button>
     <p class="keys" id="tKeys"></p>
+    <a id="t2d" class="tlink" href="https://jonnah1738.github.io/pirate-game/" target="_blank" rel="noopener">Play the classic 2D version ↗</a>
   </div>
 </div>
 
@@ -75,6 +76,9 @@
     <div class="srow"><span>Camera</span><div class="seg" id="camSeg"><button data-v="third">3rd person</button><button data-v="first">1st person</button></div></div>
     <div class="srow"><span>Sound</span><div class="seg" id="sndSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
     <div class="srow"><span>Look speed</span><input type="range" id="sens" min="0.4" max="2" step="0.1"></div>
+    <div class="srow"><span>2D or 3D?</span><button id="voteBtn" class="sbtn">Vote</button></div>
+    <div class="snote" id="voteNote"></div>
+    <a id="s2d" class="pbtn alt" href="https://jonnah1738.github.io/pirate-game/" target="_blank" rel="noopener">Play the classic 2D version ↗</a>
     <div class="help" id="helpTxt"></div>
     <button id="setClose" class="pbtn go">Resume</button>
   </div>
@@ -90,6 +94,7 @@
 
 <div id="boot">Loading the seas…</div>
 <noscript>Pirate Seas 3D needs JavaScript and WebGL.</noscript>
+<script src="js/pseas-vote.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

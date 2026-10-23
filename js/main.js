@@ -478,6 +478,7 @@ const cap = (el, id) => { try { el.setPointerCapture(id); } catch (_) { /* synth
 addEventListener('keydown', e => {
   if (e.repeat && !['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract'].includes(e.code)) return;
   keys[e.code] = true; audioInit();
+  if (window.PSEASVote && PSEASVote.isOpen()) return;
   if (state === 'title' && (e.code === 'Enter' || e.code === 'Space')) { startGame(); return; }
   if (e.code === 'Escape' || e.code === 'KeyP') { if (state === 'play' || state === 'paused') toggleSettings(); return; }
   if (state !== 'play') return;
@@ -540,7 +541,7 @@ document.addEventListener('contextmenu', e => e.preventDefault());
 function toggleSettings(force) {
   const open = force ?? $('settings').classList.contains('hidden');
   $('settings').classList.toggle('hidden', !open);
-  if (open) { if (state === 'play') state = 'paused'; refreshSettings(); }
+  if (open) { if (state === 'play') state = 'paused'; refreshSettings(); voteRow(); }
   else if (state === 'paused') state = 'play';
 }
 function refreshSettings() {
@@ -559,6 +560,31 @@ $('gfxSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; setti
 $('camSeg').onclick = e => { const v = e.target.dataset.v; if (v) { setCam(v); refreshSettings(); } };
 $('sndSeg').onclick = e => { const v = e.target.dataset.v; if (!v) return; settings.sound = v === '1'; setSound(settings.sound); saveSettings(); refreshSettings(); };
 $('sens').oninput = e => { settings.sens = +e.target.value; saveSettings(); };
+
+// ---------- 2D/3D preference vote (shared js/pseas-vote.js; results are never shown in-game) ----------
+const LIVE = location.hostname === 'jonnah1738.github.io' && (!navigator.webdriver || /[?&]ct=1\b/.test(location.search));
+let votePaused = false;
+function voteRow() { const V = window.PSEASVote; if (!V) return; const r = V.settingsRow(); $('voteBtn').textContent = r.button; $('voteNote').textContent = r.text; }
+function voteCalm() {
+  if (state === 'port') return true;
+  if (state !== 'play' || !player || player.sinking || player.hp < player.maxHp * 0.4) return false;
+  for (const s of ships) if (s !== player && !s.sinking && (s.kind === 'hunter' || (s.ai && s.ai.aggro > 0)) && Math.hypot(s.x - player.x, s.z - player.z) < 700) return false;
+  return true;
+}
+$('voteBtn').onclick = () => { if (window.PSEASVote) PSEASVote.open(true); };
+if (window.PSEASVote) PSEASVote.init({
+  game: '3d', countOn: LIVE, otherUrl: 'https://jonnah1738.github.io/pirate-game/', settingsName: 'Settings',
+  isPlaying: () => state === 'play' || state === 'port', isCalm: voteCalm,
+  onOpen: () => { if (state === 'play') { state = 'paused'; votePaused = true; } },
+  onClose: () => { if (votePaused && state === 'paused' && $('settings').classList.contains('hidden')) state = 'play'; votePaused = false; voteRow(); },
+});
+// private reach counters (live site only): unique devices + sessions (one per tab session)
+function hit3d(k, flag, store) {
+  if (!LIVE) return; try { if (flag && store.getItem(flag)) return; } catch (e) { return; }
+  fetch('https://abacus.jasoncameron.dev/hit/jonnah1738-pirate-seas/' + k, { method: 'GET', mode: 'cors', cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', keepalive: true })
+    .then(r => { if (r.ok && flag) try { store.setItem(flag, '1'); } catch (e) { } }, () => { });
+}
+hit3d('3d-devices', 'ps3d_counted_v1', localStorage); hit3d('3d-sessions', 'ps3d_session_v1', sessionStorage);
 
 // ---------- game flow ----------
 function newPlayer() {

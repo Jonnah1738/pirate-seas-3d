@@ -101,3 +101,9 @@ input[type=range]{accent-color:#6b4520;width:140px}
 /* port: panel on the left on wide screens so the harbour stays in view */
 @media (min-width:820px){#port{justify-content:flex-start;padding-left:max(32px,env(safe-area-inset-left));background:linear-gradient(90deg,rgba(5,4,3,.72),rgba(5,4,3,.12) 52%,rgba(5,4,3,0))}}
 #title{align-items:flex-end;padding-bottom:max(5vh,env(safe-area-inset-bottom))}
+/* 2D link + vote row */
+.tlink{display:inline-block;margin-top:10px;padding:8px 10px;font-size:13px;color:#d9bf84;text-decoration:none;border-bottom:1px dashed rgba(217,191,132,.5)}
+.tlink:hover{color:#f3dfae}
+a.pbtn{box-sizing:border-box;text-align:center;text-decoration:none}
+.pbtn.alt{background:linear-gradient(#cdb488,#937049);color:#2a1a0c;margin-top:10px}
+.sbtn{padding:7px 16px;font-size:13px;font-weight:bold;border-radius:6px;border:1.5px solid #2a1a0c;background:linear-gradient(#5a432a,#2e2116);color:#f3e2b6}
